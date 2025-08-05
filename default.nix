@@ -61,7 +61,7 @@ in
         libdrm
         udev
         libxkbcommon
-        legacyPackages.libgbm
+        (pkgs.legacyPackages.libgbm)
         nspr
         nss
         pango
