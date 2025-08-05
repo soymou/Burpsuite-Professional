@@ -6,7 +6,8 @@
   jdk,
   makeDesktopItem,
   unzip,
-}: let
+}:
+let
   version = "2025.1.1";
 
   productName = "pro";
@@ -61,7 +62,6 @@ in
         libdrm
         udev
         libxkbcommon
-        (pkgs.legacyPackages.libgbm)
         nspr
         nss
         pango
