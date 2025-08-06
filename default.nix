@@ -1,14 +1,16 @@
 {
   lib,
   pkgs,
-  buildFHSUserEnvBubblewrap,
+  buildFHSEnv,
   fetchurl,
   jdk,
   makeDesktopItem,
   unzip,
 }:
+
 let
   version = "2025.1.1";
+
   productName = "pro";
   productDesktop = "BurpSuite Professional";
   burpHash = "sha256-17COQ9deYkzmaXBbg1arD3BQY7l3WZ9FakLXzTxgmr8=";
@@ -23,6 +25,7 @@ let
   };
 
   loaderSrc = ./.;
+
   pname = "burpsuitepro";
 
   description = "An integrated platform for performing security testing of web applications";
@@ -40,23 +43,12 @@ let
     ];
   };
 in
-buildFHSUserEnvBubblewrap {
+buildFHSEnv {
   inherit pname version;
 
-  runScript = "${jdk}/bin/java \
-    --add-opens=java.desktop/javax.swing=ALL-UNNAMED \
-    --add-opens=java.base/java.lang=ALL-UNNAMED \
-    --add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED \
-    --add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED \
-    --add-opens=java.base/jdk.internal.org.objectweb.asm.Opcodes=ALL-UNNAMED \
-    -javaagent:${loaderSrc}/loader.jar \
-    -noverify -jar ${burpSrc}";
+  runScript = "${jdk}/bin/java --add-opens=java.desktop/javax.swing=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm.Opcodes=ALL-UNNAMED -javaagent:${loaderSrc}/loader.jar -noverify -jar ${burpSrc} &";
 
   targetPkgs = pkgs: with pkgs; [
-    # Java runtime
-    jdk
-
-    # GUI and GTK libraries
     alsa-lib
     at-spi2-core
     cairo
@@ -70,22 +62,20 @@ buildFHSUserEnvBubblewrap {
     libcanberra-gtk3
     libdrm
     libxkbcommon
-    libxshmfence
-    libXScrnSaver
-    libxss
-    libappindicator-gtk3
     nspr
     nss
     pango
     udev
+
     xorg.libX11
-    xorg.libxcb
     xorg.libXcomposite
     xorg.libXdamage
     xorg.libXext
     xorg.libXfixes
     xorg.libXrandr
-    xorg.libXtst
+    xorg.libxcb
+    xorg.libxshmfence
+    xorg.libXScrnSaver
   ];
 
   extraInstallCommands = ''
@@ -120,8 +110,10 @@ buildFHSUserEnvBubblewrap {
     license = licenses.unfree;
     platforms = jdk.meta.platforms;
     hydraPlatforms = [];
-    maintainers = with maintainers; [ bennofs fab ];
+    maintainers = with maintainers; [
+      bennofs
+      fab
+    ];
     mainProgram = "burpsuite";
   };
 }
-
