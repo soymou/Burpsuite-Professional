@@ -13,7 +13,7 @@ let
 
   productName = "pro";
   productDesktop = "BurpSuite Professional";
-  burpHash = "sha256-1h4b54aifpjg0fapjfj1l6gq8ixhcd2ijqf4kjkilnjpx152k1v2";
+  burpHash = "sha256-YocpSuhXWhqnnMRhGUVjsEeEn6FBOnmVA09eFxUpi8A=";
 
   burpSrc = fetchurl {
     name = "burpsuite.jar";
