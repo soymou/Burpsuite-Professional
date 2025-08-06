@@ -9,11 +9,11 @@
 }:
 
 let
-  version = "2025.1.1";
+  version = "2025.6.5";
 
   productName = "pro";
   productDesktop = "BurpSuite Professional";
-  burpHash = "sha256-17COQ9deYkzmaXBbg1arD3BQY7l3WZ9FakLXzTxgmr8=";
+  burpHash = "sha256-1h4b54aifpjg0fapjfj1l6gq8ixhcd2ijqf4kjkilnjpx152k1v2";
 
   burpSrc = fetchurl {
     name = "burpsuite.jar";
