@@ -9,7 +9,7 @@
     self,
     nixpkgs,
   }: let
-    system = "x86_64-linux";
+    system = "aarch64-darwin";
     pkgs = import nixpkgs {
       inherit system;
       config = {
