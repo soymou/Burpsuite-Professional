@@ -53,7 +53,6 @@ in
         cups
         dbus
         expat
-        glib
         gtk3
         gtk3-x11
         jython
