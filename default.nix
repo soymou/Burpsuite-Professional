@@ -1,10 +1,12 @@
 {
   lib,
+  pkgs,
   stdenvNoCC,
   fetchurl,
   jdk,
   unzip,
-  libicns ? null, # optional: for png2icns if iconutil isn't wanted
+  writeShellScriptBin,
+  writeTextFile,
 }: let
   version = "2025.1.1";
   productName = "pro";
@@ -23,6 +25,8 @@
   bundleId = "net.portswigger.burpsuitepro";
   description = "An integrated platform for performing security testing of web applications";
 
+  jarPath = "burpsuite_pro_v${version}.jar";
+
   javaOpens = lib.concatStringsSep " " [
     "--add-opens=java.desktop/javax.swing=ALL-UNNAMED"
     "--add-opens=java.base/java.lang=ALL-UNNAMED"
@@ -30,43 +34,25 @@
     "--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED"
     "--add-opens=java.base/jdk.internal.org.objectweb.asm.Opcodes=ALL-UNNAMED"
   ];
-in
-  stdenvNoCC.mkDerivation {
-    inherit pname version;
 
-    dontUnpack = true;
-    dontBuild = true;
+  # ---- launcher scripts built as first-class Nix derivations, no heredocs ----
+  mainLauncher = writeShellScriptBin pname ''
+    exec "${jdk}/bin/java" ${javaOpens} \
+      -javaagent:@out@/share/loader.jar \
+      -noverify -jar @out@/share/${jarPath} "$@"
+  '';
 
-    nativeBuildInputs = [unzip];
+  loaderLauncher = writeShellScriptBin "loader" ''
+    exec "${jdk}/bin/java" -jar @out@/share/loader.jar "$@"
+  '';
 
-    installPhase = ''
-      runHook preInstall
+  bundleExecutable = writeShellScriptBin pname ''
+    exec @out@/bin/${pname} "$@"
+  '';
 
-      # ---- CLI launcher, kept for terminal use / scripting ----
-      mkdir -p $out/bin $out/share
-      cp ${burpSrc} $out/share/burpsuite_pro_v${version}.jar
-      cp ${loaderSrc}/loader.jar $out/share/loader.jar
-
-      cat > $out/bin/${pname} <<EOF
-      #!${stdenvNoCC.shell}
-      exec "${jdk}/bin/java" ${javaOpens} \\
-        -javaagent:$out/share/loader.jar \\
-        -noverify -jar $out/share/burpsuite_pro_v${version}.jar "\$@"
-      EOF
-      chmod +x $out/bin/${pname}
-
-      cat > $out/bin/loader <<EOF
-      #!${stdenvNoCC.shell}
-      exec "${jdk}/bin/java" -jar "$out/share/loader.jar" "\$@"
-      EOF
-      chmod +x $out/bin/loader
-
-      # ---- macOS .app bundle (this is the "desktop entry") ----
-      APP="$out/Applications/${productDesktop}.app"
-      mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-
-      # Info.plist — the macOS analogue of a .desktop file
-      cat > "$APP/Contents/Info.plist" <<PLIST
+  infoPlist = writeTextFile {
+    name = "Info.plist";
+    text = ''
       <?xml version="1.0" encoding="UTF-8"?>
       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
       <plist version="1.0">
@@ -93,28 +79,52 @@ in
         <true/>
       </dict>
       </plist>
-      PLIST
+    '';
+  };
+in
+  stdenvNoCC.mkDerivation {
+    inherit pname version;
 
-      # bundle executable just execs the real launcher
-      cat > "$APP/Contents/MacOS/${pname}" <<EOF
-      #!${stdenvNoCC.shell}
-      exec "$out/bin/${pname}" "\$@"
-      EOF
+    dontUnpack = true;
+    dontBuild = true;
+
+    nativeBuildInputs = [unzip];
+
+    installPhase = ''
+      runHook preInstall
+
+      mkdir -p $out/bin $out/share
+
+      cp ${burpSrc} $out/share/${jarPath}
+      cp ${loaderSrc}/loader.jar $out/share/loader.jar
+
+      # substitute the @out@ placeholder now that $out is known, then install
+      sed "s#@out@#$out#g" ${mainLauncher}/bin/${pname} > $out/bin/${pname}
+      chmod +x $out/bin/${pname}
+
+      sed "s#@out@#$out#g" ${loaderLauncher}/bin/loader > $out/bin/loader
+      chmod +x $out/bin/loader
+
+      # ---- macOS .app bundle ----
+      APP="$out/Applications/${productDesktop}.app"
+      mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+      cp ${infoPlist} "$APP/Contents/Info.plist"
+
+      sed "s#@out@#$out#g" ${bundleExecutable}/bin/${pname} > "$APP/Contents/MacOS/${pname}"
       chmod +x "$APP/Contents/MacOS/${pname}"
 
-      # extract Burp's icon and convert PNG -> ICNS via iconutil (macOS-native tool)
+      # extract icon and convert to .icns via macOS-native iconutil
       ICONSET=$(mktemp -d)/${pname}.iconset
       mkdir -p "$ICONSET"
       ${lib.getBin unzip}/bin/unzip -p ${burpSrc} resources/Media/icon64${productName}.png \
         > "$ICONSET/icon_64x64.png"
-      # iconutil wants a fuller size set; duplicate as a fallback so it doesn't fail
       cp "$ICONSET/icon_64x64.png" "$ICONSET/icon_32x32.png"
       cp "$ICONSET/icon_64x64.png" "$ICONSET/icon_32x32@2x.png"
       cp "$ICONSET/icon_64x64.png" "$ICONSET/icon_128x128.png"
       if [ -x /usr/bin/iconutil ]; then
         /usr/bin/iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/${pname}.icns" || true
       fi
-      # keep the raw png too, harmless fallback if icns conversion isn't available (e.g. building on Linux)
       cp "$ICONSET/icon_64x64.png" "$APP/Contents/Resources/${pname}.png"
 
       runHook postInstall
@@ -137,55 +147,6 @@ in
       platforms = ["aarch64-darwin" "x86_64-darwin"];
       hydraPlatforms = [];
       maintainers = with maintainers; [bennofs fab];
-      mainProgram = pname;
-    };
-  }
-      # stash the jar + loader alongside
-      cp ${burpSrc} $out/share/burpsuite_pro_v${version}.jar
-      cp ${loaderSrc}/loader.jar $out/share/loader.jar
-
-      # main launcher: plain java invocation, no FHS env needed on Darwin
-      cat > $out/bin/${pname} <<EOF
-      #!${stdenvNoCC.shell}
-      exec "${jdk}/bin/java" ${javaOpens} \\
-        -javaagent:$out/share/loader.jar \\
-        -noverify -jar $out/share/burpsuite_pro_v${version}.jar "\$@"
-      EOF
-      chmod +x $out/bin/${pname}
-
-      # secondary loader-only entrypoint, mirrors original derivation
-      cat > $out/bin/loader <<EOF
-      #!${stdenvNoCC.shell}
-      exec "${jdk}/bin/java" -jar "$out/share/loader.jar" "\$@"
-      EOF
-      chmod +x $out/bin/loader
-
-      mkdir -p $out/share/applications
-      cp -r ${desktopItem}/share/applications/* $out/share/applications/
-
-      runHook postInstall
-    '';
-
-    meta = with lib; {
-      inherit description;
-      longDescription = ''
-        Burp Suite is an integrated platform for performing security testing of web applications.
-        Its various tools work seamlessly together to support the entire testing process, from
-        initial mapping and analysis of an application's attack surface, through to finding and
-        exploiting security vulnerabilities.
-      '';
-      homepage = "https://github.com/sammhansen/Burpsuite-Professional.git";
-      changelog =
-        "https://portswigger.net/burp/releases/professional-community-"
-        + replaceStrings ["."] ["-"] version;
-      sourceProvenance = with sourceTypes; [binaryBytecode];
-      license = licenses.unfree;
-      platforms = ["aarch64-darwin" "x86_64-darwin"];
-      hydraPlatforms = [];
-      maintainers = with maintainers; [
-        bennofs
-        fab
-      ];
       mainProgram = pname;
     };
   }
