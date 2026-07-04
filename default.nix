@@ -1,18 +1,17 @@
 {
   lib,
   pkgs,
-  buildFHSEnv,
+  stdenvNoCC,
   fetchurl,
   jdk,
   makeDesktopItem,
   unzip,
+  writeShellScriptBin,
 }: let
   version = "2025.1.1";
-
   productName = "pro";
   productDesktop = "BurpSuite Professional";
   burpHash = "sha256-17COQ9deYkzmaXBbg1arD3BQY7l3WZ9FakLXzTxgmr8=";
-
   burpSrc = fetchurl {
     name = "burpsuite.jar";
     urls = [
@@ -21,14 +20,20 @@
     ];
     hash = burpHash;
   };
-
   loaderSrc = ./.;
-
   pname = "burpsuitepro";
-
   description = "An integrated platform for performing security testing of web applications";
+
+  javaOpens = lib.concatStringsSep " " [
+    "--add-opens=java.desktop/javax.swing=ALL-UNNAMED"
+    "--add-opens=java.base/java.lang=ALL-UNNAMED"
+    "--add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED"
+    "--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED"
+    "--add-opens=java.base/jdk.internal.org.objectweb.asm.Opcodes=ALL-UNNAMED"
+  ];
+
   desktopItem = makeDesktopItem {
-    name = "burpsuitepro";
+    name = pname;
     exec = pname;
     icon = pname;
     desktopName = productDesktop;
@@ -40,56 +45,47 @@
     ];
   };
 in
-  buildFHSEnv {
+  stdenvNoCC.mkDerivation {
     inherit pname version;
 
-    runScript = "${jdk}/bin/java --add-opens=java.desktop/javax.swing=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED --add-opens=java.base/jdk.internal.org.objectweb.asm.Opcodes=ALL-UNNAMED -javaagent:${loaderSrc}/loader.jar -noverify -jar ${burpSrc} &";
+    dontUnpack = true;
+    dontBuild = true;
 
-    targetPkgs = pkgs:
-      with pkgs; [
-        alsa-lib
-        at-spi2-core
-        cairo
-        cups
-        dbus
-        expat
-        glib
-        gtk3
-        gtk3-x11
-        jython
-        libcanberra-gtk3
-        libdrm
-        udev
-        libxkbcommon
-        libgbm
-        nspr
-        nss
-        pango
-        libx11
-        libxcb
-        libxcomposite
-        libxdamage
-        libxext
-        libxfixes
-        libxrandr
-      ];
+    nativeBuildInputs = [ unzip ];
 
-    extraInstallCommands = ''
-      mkdir -p $out/share/pixmaps
-      mkdir -p $out/share
+    installPhase = ''
+      runHook preInstall
 
-      ${lib.getBin unzip}/bin/unzip -p ${burpSrc} resources/Media/icon64${productName}.png > $out/share/pixmaps/burpsuitepro.png
+      mkdir -p $out/bin $out/share/pixmaps $out/share
 
+      # extract Burp's app icon
+      ${lib.getBin unzip}/bin/unzip -p ${burpSrc} resources/Media/icon64${productName}.png \
+        > $out/share/pixmaps/${pname}.png
+
+      # stash the jar + loader alongside
       cp ${burpSrc} $out/share/burpsuite_pro_v${version}.jar
       cp ${loaderSrc}/loader.jar $out/share/loader.jar
 
-      # Create loader executable
-      mkdir -p $out/bin
-      echo "#!${pkgs.bash}/bin/bash" > $out/bin/loader
-      echo "\"${jdk}/bin/java\" -jar \"$out/share/loader.jar\" \"\$@\"" >> $out/bin/loader
+      # main launcher: plain java invocation, no FHS env needed on Darwin
+      cat > $out/bin/${pname} <<EOF
+      #!${stdenvNoCC.shell}
+      exec "${jdk}/bin/java" ${javaOpens} \\
+        -javaagent:$out/share/loader.jar \\
+        -noverify -jar $out/share/burpsuite_pro_v${version}.jar "\$@"
+      EOF
+      chmod +x $out/bin/${pname}
+
+      # secondary loader-only entrypoint, mirrors original derivation
+      cat > $out/bin/loader <<EOF
+      #!${stdenvNoCC.shell}
+      exec "${jdk}/bin/java" -jar "$out/share/loader.jar" "\$@"
+      EOF
       chmod +x $out/bin/loader
 
-      cp -r ${desktopItem}/share/applications $out/share
+      mkdir -p $out/share/applications
+      cp -r ${desktopItem}/share/applications/* $out/share/applications/
+
+      runHook postInstall
     '';
 
     meta = with lib; {
@@ -106,12 +102,12 @@ in
         + replaceStrings ["."] ["-"] version;
       sourceProvenance = with sourceTypes; [binaryBytecode];
       license = licenses.unfree;
-      platforms = jdk.meta.platforms;
+      platforms = ["aarch64-darwin" "x86_64-darwin"];
       hydraPlatforms = [];
       maintainers = with maintainers; [
         bennofs
         fab
       ];
-      mainProgram = "burpsuite";
+      mainProgram = pname;
     };
   }
